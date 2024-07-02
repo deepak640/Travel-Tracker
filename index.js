@@ -15,22 +15,51 @@ db.connect();
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-app.get("/", async (req, res) => {
-  //Write your code here.
+const checkVisisted = async () => {
   const { rows, rowCount } = await db.query(
     "SELECT country_code FROM visited_countries"
   );
   let countries = [];
   rows.forEach((data) => countries.push(data.country_code));
+  return { countries, rowCount };
+};
+
+app.get("/", async (req, res) => {
+  //Write your code here.
+  const { countries, rowCount } = await checkVisisted();
   res.render("index.ejs", { countries: countries, total: rowCount });
 });
 
 app.post("/add", async (req, res) => {
   const { country } = req.body;
-  const {rows} = await db.query("SELECT country_code FROM countries WHERE country_name = $1",[country])
-  const code = rows[0].country_code;
-  await db.query("INSERT INTO visited_countries (country_code)  VALUES($1)",[code])
-  res.redirect('/')
+  try {
+    const result = await db.query(
+      "SELECT country_code FROM countries WHERE LOWER(country_name) LIKE '%' || $1 || '%'",
+      [country.toLowerCase()]
+    );
+    const code = result.rows[0].country_code;
+    try {
+      await db.query(
+        "INSERT INTO visited_countries (country_code)  VALUES($1)",
+        [code]
+      );
+      res.redirect('/')
+    } catch (error) {
+      const { countries, rowCount } = await checkVisisted();
+      res.render("index.ejs", {
+        countries: countries,
+        total: rowCount,
+        error: "Country has already been added, try again.",
+      });
+    }
+  } catch (error) {
+    const { countries, rowCount } = await checkVisisted();
+    res.render("index.ejs", {
+      countries: countries,
+      total: rowCount,
+      error: "Country name does not exist, try again.",
+    });
+  }
 });
 
 app.listen(port, () => {
